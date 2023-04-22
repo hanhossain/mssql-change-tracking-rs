@@ -1,0 +1,14 @@
+**/target
+**/.dockerignore
+**/.env
+**/.git
+**/.gitignore
+**/.project
+**/.settings
+**/.toolstarget
+**/.idea
+**/docker-compose*
+**/Dockerfile*
+**/.DS_Store
+LICENSE
+README.md
