@@ -1,5 +1,5 @@
 use sqlx::mssql::MssqlConnectOptions;
-use sqlx::{ConnectOptions, MssqlPool};
+use sqlx::{ConnectOptions, FromRow, MssqlPool};
 
 pub struct Tester {
     pub pool: MssqlPool,
@@ -47,6 +47,49 @@ impl Tester {
         version
     }
 
+    pub async fn get_last_tracked_version(&self) -> Option<i64> {
+        let (version,): (i64,) = sqlx::query_as("SELECT version FROM tracking WHERE id = 'pairs'")
+            .fetch_optional(&self.pool)
+            .await
+            .unwrap()?;
+        Some(version)
+    }
+
+    pub async fn set_last_tracked_version(&self, version: i64, was_previously_tracked: bool) {
+        if was_previously_tracked {
+            println!("Updating last tracked version to {version}");
+            sqlx::query("UPDATE tracking SET version = @p1 WHERE id = 'pairs'")
+                .bind(&version)
+                .execute(&self.pool)
+                .await
+                .unwrap();
+        } else {
+            println!("Inserting last tracked version to {version}");
+            sqlx::query("INSERT INTO tracking (id, version) VALUES ('pairs', @p1)")
+                .bind(&version)
+                .execute(&self.pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    pub async fn get_changes(&self, last_tracked_version: Option<i64>) -> Vec<Change> {
+        let last_version = last_tracked_version.unwrap_or(0);
+        sqlx::query_as(
+            r#"
+        SELECT
+            id,
+            SYS_CHANGE_VERSION AS version,
+            SYS_CHANGE_OPERATION AS operation
+        FROM CHANGETABLE(CHANGES pairs, @p1)
+        AS CT"#,
+        )
+        .bind(&last_version)
+        .fetch_all(&self.pool)
+        .await
+        .unwrap()
+    }
+
     async fn create(password: &str) -> Self {
         let mut conn = MssqlConnectOptions::new()
             .username("sa")
@@ -91,14 +134,20 @@ SET CHANGE_TRACKING = ON \
         .unwrap();
 
         if !database_exists {
-            println!("Creating table");
+            println!("Creating table 'pairs'");
             sqlx::query("CREATE TABLE pairs (id NVARCHAR(256) PRIMARY KEY, value INT)")
                 .execute(&pool)
                 .await
                 .unwrap();
 
-            println!("Enabling change tracking for table");
+            println!("Enabling change tracking for table 'pairs'");
             sqlx::query("ALTER TABLE pairs ENABLE CHANGE_TRACKING")
+                .execute(&pool)
+                .await
+                .unwrap();
+
+            println!("Creating table 'tracking'");
+            sqlx::query("CREATE TABLE tracking (id NVARCHAR(256) PRIMARY KEY, version BIGINT)")
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -106,4 +155,11 @@ SET CHANGE_TRACKING = ON \
 
         Tester { pool }
     }
+}
+
+#[derive(Debug, FromRow)]
+pub struct Change {
+    pub id: String,
+    pub version: i64,
+    pub operation: String,
 }
