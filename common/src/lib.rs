@@ -39,6 +39,14 @@ impl Tester {
             .unwrap();
     }
 
+    pub async fn get_tracking_version(&self) -> i64 {
+        let (version,): (i64,) = sqlx::query_as("SELECT CHANGE_TRACKING_CURRENT_VERSION()")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap();
+        version
+    }
+
     async fn create(password: &str) -> Self {
         let mut conn = MssqlConnectOptions::new()
             .username("sa")

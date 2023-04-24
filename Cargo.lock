@@ -88,6 +88,10 @@ dependencies = [
 [[package]]
 name = "consumer"
 version = "0.1.0"
+dependencies = [
+ "common",
+ "tokio",
+]
 
 [[package]]
 name = "core-foundation"
